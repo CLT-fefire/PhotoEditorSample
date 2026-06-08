@@ -138,6 +138,7 @@ final class EditorViewController: UIViewController {
 
     private func updateUndoState() {
         toolbarView.setUndoEnabled(document?.canUndo ?? false)
+        toolbarView.setRedoEnabled(document?.canRedo ?? false)
     }
 
     // MARK: - Config
@@ -262,6 +263,13 @@ extension EditorViewController: ToolbarViewDelegate {
     func toolbarViewDidTapUndo(_ toolbar: ToolbarView) {
         guard let doc = document else { return }
         doc.undo()
+        canvasView.displayImage = doc.composited
+        updateUndoState()
+    }
+
+    func toolbarViewDidTapRedo(_ toolbar: ToolbarView) {
+        guard let doc = document else { return }
+        doc.redo()
         canvasView.displayImage = doc.composited
         updateUndoState()
     }

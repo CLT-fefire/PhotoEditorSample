@@ -3,9 +3,10 @@ import UIKit
 protocol ToolbarViewDelegate: AnyObject {
     func toolbarView(_ toolbar: ToolbarView, didSelect tool: EditTool)
     func toolbarViewDidTapUndo(_ toolbar: ToolbarView)
+    func toolbarViewDidTapRedo(_ toolbar: ToolbarView)
 }
 
-/// 하단 도구 바: [모자이크][블러][브러시][지우개]  +  [되돌리기].
+/// 하단 도구 바: [모자이크][블러][브러시][지우개]  +  [되돌리기][다시실행].
 final class ToolbarView: UIView {
 
     weak var delegate: ToolbarViewDelegate?
@@ -14,6 +15,7 @@ final class ToolbarView: UIView {
 
     private var toolButtons: [EditTool: UIButton] = [:]
     private let undoButton = UIButton(type: .system)
+    private let redoButton = UIButton(type: .system)
     private let stack = UIStackView()
 
     override init(frame: CGRect) {
@@ -50,12 +52,22 @@ final class ToolbarView: UIView {
         }
 
         undoButton.setTitle("되돌리기", for: .normal)
-        undoButton.titleLabel?.font = .systemFont(ofSize: 14, weight: .medium)
+        undoButton.titleLabel?.font = .systemFont(ofSize: 13, weight: .medium)
+        undoButton.titleLabel?.adjustsFontSizeToFitWidth = true
+        undoButton.titleLabel?.minimumScaleFactor = 0.7
         undoButton.addTarget(self, action: #selector(undoTapped), for: .touchUpInside)
         stack.addArrangedSubview(undoButton)
 
+        redoButton.setTitle("다시실행", for: .normal)
+        redoButton.titleLabel?.font = .systemFont(ofSize: 13, weight: .medium)
+        redoButton.titleLabel?.adjustsFontSizeToFitWidth = true
+        redoButton.titleLabel?.minimumScaleFactor = 0.7
+        redoButton.addTarget(self, action: #selector(redoTapped), for: .touchUpInside)
+        stack.addArrangedSubview(redoButton)
+
         updateSelectionAppearance()
         setUndoEnabled(false)
+        setRedoEnabled(false)
     }
 
     private func makeButton(title: String) -> UIButton {
@@ -80,6 +92,10 @@ final class ToolbarView: UIView {
         undoButton.isEnabled = enabled
     }
 
+    func setRedoEnabled(_ enabled: Bool) {
+        redoButton.isEnabled = enabled
+    }
+
     func selectTool(_ tool: EditTool) {
         selectedTool = tool
         updateSelectionAppearance()
@@ -96,6 +112,10 @@ final class ToolbarView: UIView {
 
     @objc private func undoTapped() {
         delegate?.toolbarViewDidTapUndo(self)
+    }
+
+    @objc private func redoTapped() {
+        delegate?.toolbarViewDidTapRedo(self)
     }
 
     private func updateSelectionAppearance() {
