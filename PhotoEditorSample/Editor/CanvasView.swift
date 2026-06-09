@@ -147,14 +147,16 @@ final class CanvasView: UIView {
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        finishStroke()
+        commitStroke()
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-        finishStroke()
+        // 핀치 줌/팬 등으로 1지 드로잉이 중단되면 진행 중 스트로크를 폐기한다(커밋 안 함 → 의도치 않은 점 방지).
+        resetOverlay()
     }
 
-    private func finishStroke() {
+    /// 정상적으로 손을 뗀 경우에만 스트로크를 확정한다.
+    private func commitStroke() {
         defer { resetOverlay() }
         guard let cfg = activeConfig, !normPoints.isEmpty else { return }
         let stroke = Stroke(config: cfg, points: normPoints)
@@ -172,16 +174,36 @@ final class CanvasView: UIView {
         fadeOutIndicator()
     }
 
+    // MARK: - 핀치 줌 연동
+
+    /// 스크롤뷰 줌 배율을 반영한다. 캔버스 전체가 줌 transform으로 확대되면 인디케이터 외곽선(2pt)도
+    /// 같이 두꺼워지므로 1/zoom으로 역보정해 화면상 ~2pt를 유지한다.
+    /// (라이브 마스크 `shapeLayer.lineWidth`는 일부러 건드리지 않는다 — 줌과 함께 확대돼야 최종 합성과 일치.)
+    func applyZoomScale(_ zoom: CGFloat) {
+        let z = max(zoom, 0.0001)   // bounce로 1 미만 순간값이 와도 0 나눗셈 방지
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        brushIndicatorLayer.lineWidth = 2 / z
+        brushIndicatorLayer.shadowRadius = 2 / z
+        CATransaction.commit()
+    }
+
     // MARK: - 브러시 크기 인디케이터
 
-    /// 굵기 슬라이더 변경 시: 이미지 중앙에 현재 브러시 지름의 원을 잠깐 보여준다.
-    func showBrushSizePreview() {
+    /// 굵기 슬라이더 변경 시: 현재 브러시 지름의 원을 잠깐 보여준다.
+    /// - Parameter contentCenter: 콘텐츠 좌표 기준 표시 중심. nil이면 이미지 중앙.
+    ///   (줌/팬 상태에서 이미지 중앙이 화면 밖일 수 있어, 호출부가 보이는 영역 중심을 넘긴다.)
+    func showBrushSizePreview(centeredAt contentCenter: CGPoint? = nil) {
         guard imageSize != .zero,
               let cfg = delegate?.canvasViewCurrentConfig(self) else { return }
         let fitted = mapper.fittedRect
         guard fitted.width > 0, fitted.height > 0 else { return }
         let diameter = max(1, cfg.brushRadius * min(fitted.width, fitted.height) * 2)
-        setIndicator(center: CGPoint(x: fitted.midX, y: fitted.midY), diameter: diameter)
+        // 전달된 중심을 이미지 rect 안으로 클램프(레터박스/과도한 팬 대비). 없으면 이미지 중앙.
+        let raw = contentCenter ?? CGPoint(x: fitted.midX, y: fitted.midY)
+        let center = CGPoint(x: min(fitted.maxX, max(fitted.minX, raw.x)),
+                             y: min(fitted.maxY, max(fitted.minY, raw.y)))
+        setIndicator(center: center, diameter: diameter)
         showIndicatorInstant()
 
         previewHideWork?.cancel()

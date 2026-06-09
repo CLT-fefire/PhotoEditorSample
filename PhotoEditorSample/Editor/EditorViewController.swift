@@ -12,6 +12,7 @@ final class EditorViewController: UIViewController {
     private let saveButton = UIButton(type: .system)
     private let placeholderLabel = UILabel()
 
+    private let canvasScrollView = UIScrollView()
     private let canvasView = CanvasView()
     private let parameterView = ParameterSliderView()
     private let toolbarView = ToolbarView()
@@ -21,6 +22,8 @@ final class EditorViewController: UIViewController {
     private var document: EditDocument?
     /// 저장용 원본 해상도 이미지(.up, scale 1). 정규화 스트로크를 이 위에 재렌더하여 고해상도로 저장.
     private var fullOriginal: UIImage?
+    /// 캔버스 가시 영역이 실제로 바뀔 때만 줌 대상 frame을 다시 잡기 위한 캐시.
+    private var lastLaidOutCanvasSize: CGSize = .zero
 
     private var currentTool: EditTool = .mosaic
     private var currentColor: BrushColor { BrushColor(rawValue: parameterView.selectedColorIndex) ?? .red }
@@ -37,6 +40,19 @@ final class EditorViewController: UIViewController {
         applyLoadedState(false)
         parameterView.configure(for: currentTool)
         toolbarView.selectTool(currentTool)
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        // 줌 대상(canvasView)은 frame으로 관리한다. 가시 영역 크기가 실제로 바뀔 때만 다시 잡아
+        // 줌 진행 중 불필요한 리셋을 피한다. zoomScale==1에서 canvasView.frame == scrollView.bounds.
+        let size = canvasScrollView.bounds.size
+        guard size.width > 0, size.height > 0, size != lastLaidOutCanvasSize else { return }
+        lastLaidOutCanvasSize = size
+        canvasScrollView.setZoomScale(1, animated: false)   // 회전 등 크기 변경 시 줌 리셋
+        canvasView.frame = CGRect(origin: .zero, size: size)
+        canvasScrollView.contentSize = size
+        canvasView.applyZoomScale(1)
     }
 
     // MARK: - UI build
@@ -66,11 +82,24 @@ final class EditorViewController: UIViewController {
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         topBar.addSubview(titleLabel)
 
-        // 캔버스
+        // 캔버스: UIScrollView로 감싸 핀치 줌/팬을 지원한다. 1손가락 = 드로잉, 2손가락 = 팬+줌.
+        canvasScrollView.delegate = self
+        canvasScrollView.backgroundColor = UIColor(white: 0.96, alpha: 1)
+        canvasScrollView.minimumZoomScale = 1
+        canvasScrollView.maximumZoomScale = 4
+        canvasScrollView.bouncesZoom = true
+        canvasScrollView.showsHorizontalScrollIndicator = false
+        canvasScrollView.showsVerticalScrollIndicator = false
+        canvasScrollView.delaysContentTouches = false                    // 드로잉 첫 점 지연 제거
+        canvasScrollView.panGestureRecognizer.minimumNumberOfTouches = 2 // 1손가락은 드로잉으로 흘려보냄
+        canvasScrollView.contentInsetAdjustmentBehavior = .never
+        canvasScrollView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(canvasScrollView)
+
+        // canvasView는 스크롤뷰의 줌 대상 → frame으로 관리(autoresizing mask 기본값 유지).
         canvasView.delegate = self
         canvasView.backgroundColor = UIColor(white: 0.96, alpha: 1)
-        canvasView.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(canvasView)
+        canvasScrollView.addSubview(canvasView)
 
         placeholderLabel.text = "‘불러오기’를 눌러 사진을 선택하세요"
         placeholderLabel.font = .systemFont(ofSize: 15)
@@ -78,7 +107,7 @@ final class EditorViewController: UIViewController {
         placeholderLabel.textAlignment = .center
         placeholderLabel.numberOfLines = 0
         placeholderLabel.translatesAutoresizingMaskIntoConstraints = false
-        canvasView.addSubview(placeholderLabel)
+        view.addSubview(placeholderLabel)   // 줌 대상 밖(이미지 로드 전에만 표시되므로 줌과 무관)
 
         // 파라미터 + 도구 바
         parameterView.delegate = self
@@ -105,16 +134,16 @@ final class EditorViewController: UIViewController {
             titleLabel.centerXAnchor.constraint(equalTo: topBar.centerXAnchor),
             titleLabel.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
 
-            canvasView.topAnchor.constraint(equalTo: topBar.bottomAnchor),
-            canvasView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            canvasView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            canvasScrollView.topAnchor.constraint(equalTo: topBar.bottomAnchor),
+            canvasScrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            canvasScrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
 
-            placeholderLabel.centerXAnchor.constraint(equalTo: canvasView.centerXAnchor),
-            placeholderLabel.centerYAnchor.constraint(equalTo: canvasView.centerYAnchor),
-            placeholderLabel.leadingAnchor.constraint(greaterThanOrEqualTo: canvasView.leadingAnchor, constant: 24),
-            placeholderLabel.trailingAnchor.constraint(lessThanOrEqualTo: canvasView.trailingAnchor, constant: -24),
+            placeholderLabel.centerXAnchor.constraint(equalTo: canvasScrollView.centerXAnchor),
+            placeholderLabel.centerYAnchor.constraint(equalTo: canvasScrollView.centerYAnchor),
+            placeholderLabel.leadingAnchor.constraint(greaterThanOrEqualTo: canvasScrollView.leadingAnchor, constant: 24),
+            placeholderLabel.trailingAnchor.constraint(lessThanOrEqualTo: canvasScrollView.trailingAnchor, constant: -24),
 
-            parameterView.topAnchor.constraint(equalTo: canvasView.bottomAnchor),
+            parameterView.topAnchor.constraint(equalTo: canvasScrollView.bottomAnchor),
             parameterView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             parameterView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             parameterView.heightAnchor.constraint(equalToConstant: 124),
@@ -214,6 +243,9 @@ final class EditorViewController: UIViewController {
         canvasView.imageSize = working.size      // scale 1 → size == 픽셀 크기
         canvasView.displayImage = doc.composited
 
+        canvasScrollView.setZoomScale(1, animated: false)   // 새 이미지는 1x부터
+        canvasView.applyZoomScale(1)
+
         applyLoadedState(true)
     }
 
@@ -283,7 +315,9 @@ extension EditorViewController: ParameterSliderViewDelegate {
     }
 
     func parameterViewDidChangeBrushSize(_ view: ParameterSliderView) {
-        canvasView.showBrushSizePreview()   // 굵기 변경을 화면에 원으로 가늠
+        // 줌/팬 상태에서도 보이도록 현재 보이는 영역의 중심(콘텐츠 좌표)에 미리보기 원을 표시한다.
+        let visible = canvasScrollView.convert(canvasScrollView.bounds, to: canvasView)
+        canvasView.showBrushSizePreview(centeredAt: CGPoint(x: visible.midX, y: visible.midY))
     }
 }
 
@@ -300,5 +334,18 @@ extension EditorViewController: UIImagePickerControllerDelegate, UINavigationCon
 
     func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
         picker.dismiss(animated: true)
+    }
+}
+
+// MARK: - UIScrollViewDelegate (핀치 줌)
+
+extension EditorViewController: UIScrollViewDelegate {
+
+    func viewForZooming(in scrollView: UIScrollView) -> UIView? {
+        return canvasView
+    }
+
+    func scrollViewDidZoom(_ scrollView: UIScrollView) {
+        canvasView.applyZoomScale(scrollView.zoomScale)   // 인디케이터 외곽선 두께 역보정
     }
 }
