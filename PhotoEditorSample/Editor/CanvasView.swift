@@ -33,6 +33,11 @@ final class CanvasView: UIView {
     private let overlayImageView = UIImageView()
     private let shapeLayer = CAShapeLayer()
 
+    /// 브러시 크기 인디케이터: 외곽선만 있는 원. 손가락을 따라다니며 작업 위치·굵기를 보여준다.
+    private let brushIndicatorLayer = CAShapeLayer()
+    /// 굵기 슬라이더 미리보기의 자동 숨김 작업(다음 표시 시 취소).
+    private var previewHideWork: DispatchWorkItem?
+
     // MARK: - 진행 중 스트로크 상태
 
     private var activeConfig: StrokeConfig?
@@ -69,6 +74,17 @@ final class CanvasView: UIView {
         shapeLayer.strokeColor = UIColor.white.cgColor   // 마스크: 흰색 = 드러냄
         shapeLayer.lineCap = .round
         shapeLayer.lineJoin = .round
+
+        // 외곽선만 있는 원. 흰 선 + 검은 그림자로 밝거나 어두운 사진 위에서도 보이게 한다.
+        brushIndicatorLayer.fillColor = UIColor.clear.cgColor
+        brushIndicatorLayer.strokeColor = UIColor.white.cgColor
+        brushIndicatorLayer.lineWidth = 2
+        brushIndicatorLayer.shadowColor = UIColor.black.cgColor
+        brushIndicatorLayer.shadowOpacity = 0.6
+        brushIndicatorLayer.shadowRadius = 2
+        brushIndicatorLayer.shadowOffset = .zero
+        brushIndicatorLayer.opacity = 0          // 평소엔 숨김(투명)
+        layer.addSublayer(brushIndicatorLayer)
     }
 
     override func layoutSubviews() {
@@ -76,6 +92,7 @@ final class CanvasView: UIView {
         baseImageView.frame = bounds
         overlayImageView.frame = bounds
         shapeLayer.frame = overlayImageView.bounds
+        brushIndicatorLayer.frame = bounds
     }
 
     // MARK: - Coordinate helper
@@ -112,6 +129,11 @@ final class CanvasView: UIView {
         shapeLayer.path = bezier.cgPath
         overlayImageView.layer.mask = shapeLayer
         overlayImageView.isHidden = false
+
+        // 크기 인디케이터를 손가락 위치에 즉시 표시 (슬라이더 미리보기 자동숨김이 예약돼 있으면 취소).
+        previewHideWork?.cancel()
+        setIndicator(center: p, diameter: max(1, lineWidth))
+        showIndicatorInstant()
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -121,6 +143,7 @@ final class CanvasView: UIView {
         normPoints.append(mapper.normalizedPoint(fromView: p))
         bezier.addLine(to: p)
         shapeLayer.path = bezier.cgPath
+        setIndicator(center: p, diameter: shapeLayer.lineWidth)   // 인디케이터가 손가락을 따라간다
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -146,6 +169,50 @@ final class CanvasView: UIView {
         overlayImageView.layer.mask = nil
         overlayImageView.image = nil
         overlayImageView.isHidden = true
+        fadeOutIndicator()
+    }
+
+    // MARK: - 브러시 크기 인디케이터
+
+    /// 굵기 슬라이더 변경 시: 이미지 중앙에 현재 브러시 지름의 원을 잠깐 보여준다.
+    func showBrushSizePreview() {
+        guard imageSize != .zero,
+              let cfg = delegate?.canvasViewCurrentConfig(self) else { return }
+        let fitted = mapper.fittedRect
+        guard fitted.width > 0, fitted.height > 0 else { return }
+        let diameter = max(1, cfg.brushRadius * min(fitted.width, fitted.height) * 2)
+        setIndicator(center: CGPoint(x: fitted.midX, y: fitted.midY), diameter: diameter)
+        showIndicatorInstant()
+
+        previewHideWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.fadeOutIndicator() }
+        previewHideWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9, execute: work)
+    }
+
+    /// 인디케이터 원의 위치·지름 갱신. 암묵적 애니메이션을 꺼 손가락을 지연 없이 따라가게 한다.
+    private func setIndicator(center: CGPoint, diameter: CGFloat) {
+        let d = max(1, diameter)
+        let rect = CGRect(x: center.x - d / 2, y: center.y - d / 2, width: d, height: d)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        brushIndicatorLayer.path = UIBezierPath(ovalIn: rect).cgPath
+        CATransaction.commit()
+    }
+
+    private func showIndicatorInstant() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        brushIndicatorLayer.removeAllAnimations()   // 진행 중인 페이드아웃 취소 (깜빡임 방지)
+        brushIndicatorLayer.opacity = 1
+        CATransaction.commit()
+    }
+
+    private func fadeOutIndicator() {
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(0.25)
+        brushIndicatorLayer.opacity = 0
+        CATransaction.commit()
     }
 
     // MARK: - Live preview image

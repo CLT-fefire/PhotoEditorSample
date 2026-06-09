@@ -2,6 +2,8 @@ import UIKit
 
 protocol ParameterSliderViewDelegate: AnyObject {
     func parameterViewDidChange(_ view: ParameterSliderView)
+    /// 굵기(공통) 슬라이더가 변경되었을 때. 브러시 크기 미리보기 표시에 사용.
+    func parameterViewDidChangeBrushSize(_ view: ParameterSliderView)
 }
 
 /// 현재 도구의 파라미터 UI.
@@ -55,10 +57,11 @@ final class ParameterSliderView: UIView {
         slider2.minimumValue = 0
         slider2.maximumValue = 1
         slider2.value = 0.4
-        slider2.addTarget(self, action: #selector(valueChanged), for: .valueChanged)
+        slider2.addTarget(self, action: #selector(thicknessChanged), for: .valueChanged)
 
         colorControl.selectedSegmentIndex = 0
         colorControl.addTarget(self, action: #selector(valueChanged), for: .valueChanged)
+        updateColorSelectionAppearance()
 
         row1.axis = .horizontal
         row1.spacing = 8
@@ -100,6 +103,30 @@ final class ParameterSliderView: UIView {
     }
 
     @objc private func valueChanged() {
+        updateColorSelectionAppearance()
         delegate?.parameterViewDidChange(self)
+    }
+
+    /// 굵기 슬라이더 전용: 크기 미리보기를 띄우도록 별도 콜백을 호출한다.
+    @objc private func thicknessChanged() {
+        delegate?.parameterViewDidChangeBrushSize(self)
+        delegate?.parameterViewDidChange(self)
+    }
+
+    /// 선택된 세그먼트 알약을 해당 브러시 색으로 칠하고 흰색 굵은 글자로 강조한다.
+    /// 선택 위치(채워진 알약)와 실제 색을 동시에 드러낸다.
+    private func updateColorSelectionAppearance() {
+        let color = (BrushColor(rawValue: selectedColorIndex) ?? .red).uiColor
+        colorControl.setTitleTextAttributes(
+            [.foregroundColor: UIColor.white,
+             .font: UIFont.systemFont(ofSize: 13, weight: .semibold)], for: .selected)
+        colorControl.setTitleTextAttributes(
+            [.foregroundColor: UIColor.darkText,
+             .font: UIFont.systemFont(ofSize: 13, weight: .regular)], for: .normal)
+        if #available(iOS 13.0, *) {
+            colorControl.selectedSegmentTintColor = color
+        } else {
+            colorControl.tintColor = color   // iOS 12: 선택 세그먼트 배경 = tintColor
+        }
     }
 }

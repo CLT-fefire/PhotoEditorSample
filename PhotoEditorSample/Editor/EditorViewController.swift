@@ -281,6 +281,10 @@ extension EditorViewController: ParameterSliderViewDelegate {
     func parameterViewDidChange(_ view: ParameterSliderView) {
         // 값은 다음 터치 시작 시 makeConfig()에서 읽으므로 즉시 처리할 것은 없다.
     }
+
+    func parameterViewDidChangeBrushSize(_ view: ParameterSliderView) {
+        canvasView.showBrushSizePreview()   // 굵기 변경을 화면에 원으로 가늠
+    }
 }
 
 // MARK: - UIImagePickerControllerDelegate
