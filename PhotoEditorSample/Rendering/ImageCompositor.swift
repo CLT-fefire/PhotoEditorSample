@@ -19,10 +19,18 @@ final class ImageCompositor {
     let context: CIContext
 
     private init() {
+        // working space를 화면(sRGB, 감마)으로 고정한다. 기본값은 linear-light라서
+        // CIBlendWithMask가 선형광에서 알파 합성하는데, 라이브 미리보기(CALayer alpha)는
+        // 감마 공간에서 합성한다 → 부분 투명 브러시의 색이 터치 업에 어긋난다.
+        // 동일 공간으로 맞춰 미리보기 == 확정 결과(WYSIWYG)를 보장한다.
+        let srgb = CGColorSpace(name: CGColorSpace.sRGB)
+        var options: [CIContextOption: Any] = [:]
+        if let srgb = srgb { options[.workingColorSpace] = srgb }
         if let device = MTLCreateSystemDefaultDevice() {
-            context = CIContext(mtlDevice: device)
+            context = CIContext(mtlDevice: device, options: options)
         } else {
-            context = CIContext(options: [.useSoftwareRenderer: false])
+            options[.useSoftwareRenderer] = false
+            context = CIContext(options: options)
         }
     }
 
