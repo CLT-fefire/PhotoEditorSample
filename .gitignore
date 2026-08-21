@@ -21,3 +21,7 @@ xcuserdata/
 # Swift Package Manager
 .swiftpm/
 .build/
+
+# 로컬 개발 도구 상태 (iOS 빌드와 무관)
+.serena/
+.claude/settings.local.json
